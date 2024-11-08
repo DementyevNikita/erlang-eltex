@@ -1,5 +1,6 @@
 -module(sorstu).
--export([student/0,sor_age/2, sor_name/2, sor_gender/2, sor_score/2, sor_fast/2, sor_on_student/2,viv/0, m_time/1]).
+-export([student/0, sor_id/2, sor_age/2, sor_name/2, sor_gender/2, sor_score/2, sor_fast/2, sor_on_student/2,viv/0, m_time/1]).
+-include_lib("eunit/include/eunit.hrl").
 -record(student, {id, name, gender, age, score}).
 
 student() ->
@@ -19,6 +20,8 @@ m_time(Fun) ->
         io:format("Exe time: ~p microsec ~n",[ElapsedTime]),
         Result.
 
+sor_id(Stu1,Stu2) ->
+	Stu1#student.id < Stu2#student.id.
 sor_age(Stu1,Stu2) ->
 	Stu1#student.age < Stu2#student.age.
 sor_name(Stu1,Stu2) ->
@@ -39,6 +42,7 @@ sor_fast([Pivot|Rest], Sor) ->
 
 sor_on_student(Stu, Key) ->
 	case Key of
+		id -> sor_fast(Stu, fun sor_id/2);
 		age -> sor_fast(Stu, fun sor_age/2);
 		name -> sor_fast(Stu, fun sor_name/2);
 		gender -> sor_fast(Stu, fun sor_gender/2);
@@ -48,8 +52,43 @@ sor_on_student(Stu, Key) ->
 viv() ->
 	Student = student(),
 	Sorlist = lists:sort(fun(Stu1, Stu2) -> sor_name(Stu1,Stu2)end,Student),
-	io:format("Sortirovka: ~p~n", [Sorlist]),
+	io:format("Otvet~p~n",[Sorlist]),
 	ok.
 
-
-
+sor_on_student_test() ->
+	S = student(),
+	?assertEqual([{student,3,"Bob",male,19,3},
+		      {student,1,"Lera",female,21,3},
+		      {student,4,"Lida",female,35,5},
+		      {student,2,"Misha",male,27,4},
+		      {student,5,"Sasha",male,23,5}]
+		   ,sor_on_student(S,name)),
+	?assertEqual([{student,3,"Bob",male,19,3},
+ 		      {student,1,"Lera",female,21,3},
+		      {student,5,"Sasha",male,23,5},
+		      {student,2,"Misha",male,27,4},
+		      {student,4,"Lida",female,35,5}],sor_on_student(S,age)),
+	?assertEqual([{student,3,"Bob",male,19,3},
+		      {student,1,"Lera",female,21,3},
+		      {student,2,"Misha",male,27,4},
+		      {student,5,"Sasha",male,23,5},
+		      {student,4,"Lida",female,35,5}],sor_on_student(S,score)),
+	?assertEqual( [{student,4,"Lida",female,35,5},
+ 		       {student,1,"Lera",female,21,3},
+		       {student,5,"Sasha",male,23,5},
+ 		       {student,2,"Misha",male,27,4},
+ 		       {student,3,"Bob",male,19,3}],sor_on_student(S,gender)),
+        ?assertEqual([{student,1,"Lera",female,21,3},
+ 		      {student,2,"Misha",male,27,4},
+ 		      {student,3,"Bob",male,19,3},
+ 		      {student,4,"Lida",female,35,5},
+ 		      {student,5,"Sasha",male,23,5}],sor_on_student(S,id)),
+        ok.
+%viv_test() ->
+%	?assertEqual("Otvet",[{student,3,"Bob",male,19,3},
+%                      {student,1,"Lera",female,21,3},
+ %                     {student,4,"Lida",female,35,5},
+  %                    {student,2,"Misha",male,27,4},
+   %                   {student,5,"Sasha",male,23,5}]
+    %               ,viv()),
+%	ok.
