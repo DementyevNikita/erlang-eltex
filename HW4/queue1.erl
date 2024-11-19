@@ -1,32 +1,39 @@
 -module(queue1).
 -export([new/0, enqueue/2, dequeue/1, top/1, isEmpty/1]).
 -include_lib("eunit/include/eunit.hrl").
+
 -type queue() :: list().
+
+%создание новой очереди
 -spec new() -> queue().
 new() ->
 	[].
 
+%добавление элемента в конец очереди
 -spec enqueue(Element::any(), queue()) -> queue().
 enqueue(Element, Queue) ->
 	Queue ++ [Element].
 
--spec dequeue(Queue::list()) ->
-        { Head::any(), Tail::list()}|{error,empty_queue}.
+%просмотр верхнего элемента очереди и его удаление
+-spec dequeue(Queue::list()) -> { Head::any(), Tail::list()}|{error,empty_queue}.
 dequeue([]) ->
         {error, empty_queue};
 dequeue([Head|Tail]) ->
         {Head,Tail}.
 
+%просмотр верхнего элемента в очереди
 -spec top(Queue::list()) -> {Head::any()}|{error,empty_queue}.
 top([]) ->
         {error, empty_queue};
 top([Head| _Tail]) ->
         Head.
 
+%проверка пустая ли очередь
 -spec isEmpty(Queue::list()) -> boolean().
 isEmpty(Queue) ->
         Queue =:=[].
 
+%тесты функций
 new_test() ->
         NewQueue = new(),
         ?assertEqual([],NewQueue),

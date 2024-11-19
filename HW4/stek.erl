@@ -1,32 +1,39 @@
 -module(stek).
 -export([new/0, push/2, pop/1, top/1, isEmpty/1]).
 -include_lib("eunit/include/eunit.hrl").
+
 -type stack() :: list(). 
+
+%создание пустого списка
 -spec new() -> stack().
 new() ->
 	[].
 
+%добавление элемента в список
 -spec push(Element::any(), stack()) -> stack().
 push(Element, Stack) ->
 	[Element | Stack].
 
--spec pop(Stack::list()) -> 
-	{ Head::any(), Tail::list()}|{error,empty_stack}.
+%просмотр верхнего элемента списка и его удаление
+-spec pop(Stack::list()) -> { Head::any(), Tail::list()}|{error,empty_stack}.
 pop([]) ->
         {error, empty_stack};
 pop([Head|Tail]) ->
 	{Head,Tail}.
 
+%просмотр верхнего элемента из списка
 -spec top(Stack::list()) -> {Head::any()}|{error,empty_stack}.
 top([]) ->
 	{error, empty_stack};
 top([Head| _Tail]) -> 
 	Head.
 
+%проверка пустой ли список
 -spec isEmpty(Stack::list()) -> boolean().
 isEmpty(Stack) ->
 	Stack =:=[].
 
+%тест функций
 new_test() ->
 	NewStack = new(),
         ?assertEqual([],NewStack),
