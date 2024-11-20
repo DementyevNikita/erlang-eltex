@@ -3,6 +3,7 @@
 -include_lib("eunit/include/eunit.hrl").
 -record(student, {id, name, gender, age, score}).
 
+-spec student() -> list.
 student() ->
 	[
 	 #student{id = 5,name = "Sasha",gender = male,age = 23,score = 5},
@@ -11,7 +12,7 @@ student() ->
 	 #student{id = 3,name = "Bob",gender =  male,age =  19,score = 3},
 	 #student{id = 1,name = "Lera",gender =  female,age = 21,score = 3}
 	].
-
+-spec m_time(Fun :: fun()) -> int.
 m_time(Fun) ->
         StartTime = erlang:monotonic_time(),
         Result = Fun(),
@@ -39,7 +40,7 @@ sor_fast([Pivot|Rest], Sor) ->
 	sor_fast([X ||X <- Rest,not Sor(X, Pivot)], Sor).
 
 
-
+-spec sor_on_student(Stu::list, Key :: atom) -> list.
 sor_on_student(Stu, Key) ->
 	case Key of
 		id -> sor_fast(Stu, fun sor_id/2);
@@ -48,7 +49,7 @@ sor_on_student(Stu, Key) ->
 		gender -> sor_fast(Stu, fun sor_gender/2);
 		score -> sor_fast(Stu, fun sor_score/2)
 	end.
-
+-spec viv() -> list.
 viv() ->
 	Student = student(),
 	Sorlist = lists:sort(fun(Stu1, Stu2) -> sor_name(Stu1,Stu2)end,Student),
@@ -84,6 +85,8 @@ sor_on_student_test() ->
  		      {student,4,"Lida",female,35,5},
  		      {student,5,"Sasha",male,23,5}],sor_on_student(S,id)),
         ok.
+
+
 %viv_test() ->
 %	?assertEqual("Otvet",[{student,3,"Bob",male,19,3},
 %                      {student,1,"Lera",female,21,3},
