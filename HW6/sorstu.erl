@@ -52,9 +52,7 @@ sor_on_student(Stu, Key) ->
 -spec viv() -> list.
 viv() ->
 	Student = student(),
-	Sorlist = lists:sort(fun(Stu1, Stu2) -> sor_name(Stu1,Stu2)end,Student),
-	io:format("Otvet~p~n",[Sorlist]),
-	ok.
+	lists:sort(fun(Stu1, Stu2) -> sor_name(Stu1,Stu2)end,Student).
 
 sor_on_student_test() ->
 	S = student(),
@@ -87,11 +85,11 @@ sor_on_student_test() ->
         ok.
 
 
-%viv_test() ->
-%	?assertEqual("Otvet",[{student,3,"Bob",male,19,3},
-%                      {student,1,"Lera",female,21,3},
- %                     {student,4,"Lida",female,35,5},
-  %                    {student,2,"Misha",male,27,4},
-   %                   {student,5,"Sasha",male,23,5}]
-    %               ,viv()),
-%	ok.
+viv_test() ->
+	?assertEqual([{student,3,"Bob",male,19,3},
+                      {student,1,"Lera",female,21,3},
+                      {student,4,"Lida",female,35,5},
+                      {student,2,"Misha",male,27,4},
+                      {student,5,"Sasha",male,23,5}]
+                   ,viv()),
+	ok.
