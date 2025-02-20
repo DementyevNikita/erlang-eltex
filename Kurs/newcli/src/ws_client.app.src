@@ -1,0 +1,11 @@
+{application, ws_client,
+ [
+  {description, "WebSocket Client"},
+  {vsn, "0.1.0"},
+  {modules, [ws_client, ws_client_sup, ws_client_app, http_client, auth_client]},
+  {registered, []},
+  {applications, [kernel, stdlib, gun, cowlib, recon, jsx]},
+  {mod, {ws_client_app, []}},
+  {env, []}
+ ]}.
+
