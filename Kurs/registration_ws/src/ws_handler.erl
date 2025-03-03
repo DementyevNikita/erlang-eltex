@@ -1,12 +1,13 @@
 -module(ws_handler).
 -behaviour(cowboy_websocket).
 
--export([init/2, websocket_init/3, websocket_handle/2, websocket_info/2, terminate/3]).
+-export([init/2, websocket_init/3, websocket_handle/2, websocket_info/2, terminate/3, send_message_to_client/1]).
 
 init(Req0, State) ->
     Qs = cowboy_req:parse_qs(Req0),
+    io:format("WebSocket connected for user: ~p~n", [Req0]),
+    Pid = maps:get(pid, Req0),
     TokenParam = proplists:get_value(<<"token">>, Qs),
-
     case TokenParam of
         undefined ->
             Req1 = cowboy_req:reply(401, #{}, <<"Missing or invalid token">>, Req0),
@@ -15,6 +16,7 @@ init(Req0, State) ->
             case verify_token(binary_to_list(TokenValue)) of
                 {ok, Username} ->
                     io:format("WebSocket connected for user: ~p~n", [Username]),
+                    ets:insert(user_sessions, {Username, Pid}),
                     {cowboy_websocket, Req0, #{username => Username}};
                 {error, Reason} ->
                     Msg = io_lib:format("Invalid token: ~p", [Reason]),
@@ -24,7 +26,8 @@ init(Req0, State) ->
     end.
 
 websocket_init(Req, _Opts, State) ->
-    {ok, Req, State}.
+    io:format("Client connected: ~p~n", [self()]),
+    {Req, _Opts, State}.
 
 websocket_handle({text, Msg}, State) ->
     Username = maps:get(username, State),
@@ -49,31 +52,41 @@ websocket_handle({text, Msg}, State) ->
                             io:format("Join room error for user ~p: ~p~n", [Username, Reason]),
                             {reply, {text, <<"Error: Unable to join room">>}, State}
                     end;
-                {send_message, RoomName, Message} -> 
-                    case user_storage:send_message(RoomName, Username, Message) of
+                {send_message, RoomName, NMessage} ->
+                    case user_storage:send_message(RoomName, Username, NMessage) of
                         {ok, _} ->
-                            io:format("Message sent to room ~p by user ~p~n", [RoomName, Username]),
+			    io:format("Message sent to room ~p by user ~p:~p~n", [RoomName, Username,NMessage]),
                             {reply, {text, <<"Message sent successfully">>}, State};
                         {error, Reason} ->
                             io:format("Message error for room ~p: ~p~n", [RoomName, Reason]),
                             {reply, {text, <<"Error: Unable to send message">>}, State}
                     end;
+		{custom_message, NMessage} ->
+                    io:format("Custom message from ~p: ~p~n", [Username, NMessage]),
+		    send_message_to_client(NMessage),
+		    {reply, {text, <<"Custom message received">>}, State};
                 invalid ->
-                    {reply, {text, <<"Error: Invalid command">>}, State}
+                    {reply, {text, <<"Invalid command or ping">>}, State}
             end;
         false ->
             io:format("Ошибка: недопустимое сообщение от клиента: ~p~n", [Msg]),
             {reply, {text, <<"Ошибка: Сообщение не является допустимой строкой">>}, State}
-    end;
+   end;
+
+websocket_handle({binary, _Msg}, State) ->
+    {reply, {binary, <<"ping">>}, State};
+
+
 
 websocket_handle(_Data, State) ->
     io:format("Неверный формат сообщения: ~p~n", [_Data]),
     {reply, {text, <<"Ошибка: Неверный формат сообщения">>}, State}.
 
-websocket_info(_Info, State) ->
+websocket_info(_Info,State) ->
     {ok, State}.
 
 terminate(_Reason, _Req, #{username := Username}) ->
+    ets:delete(user_sessions, Username),
     io:format("WebSocket terminated for user: ~p~n", [Username]),
     ok;
 
@@ -101,6 +114,13 @@ parse_message(Message) ->
     case binary:split(MessageBin, <<" ">>, [global]) of
         [<<"create_room">>, RoomName] -> {create_room, RoomName};
         [<<"join_room">>, RoomName] -> {join_room, RoomName};
-        [<<"send_message">>, RoomName, Message] -> {send_message, RoomName, Message};
-        _ -> invalid
+        [<<"send_message">>, RoomName, NMessage] -> {send_message, RoomName, NMessage};
+	[<<"custom_message">>, NMessage] -> {custom_message, NMessage};
+	_ -> invalid
     end.
+
+send_message_to_client(NMessage) ->
+    Clients = ets:tab2list(user_sessions),
+    lists:foreach(fun({_, ClientPid}) ->
+                      ClientPid ! {custom_message, NMessage}
+                  end, Clients).

@@ -1,5 +1,5 @@
 -module(user_storage).
--export([add_user/2, authenticate/2, find_user/1, init_db/0, create_room/1, join_room/2, send_message/3, init_ets/0]).
+-export([add_user/2, authenticate/2, find_user/1, init_db/0, create_room/1, join_room/2, send_message/3, init_ets/0, send_to_user/3]).
 -include_lib("epgsql/include/epgsql.hrl").
 -define(DB_HOST, "localhost").
 -define(DB_PORT, 5432).
@@ -11,6 +11,7 @@
 
 init_ets() ->
     ets:new(chat_rooms, [named_table, set, public]),
+    ets:new(user_sessions, [named_table, {keypos, 1}, {read_concurrency, true}, public]),
     ok.
 
 init_db() ->
@@ -93,43 +94,67 @@ create_room(RoomName) ->
             {error, "Room already exists"}
     end.
 
-% Подключение пользователя к комнате
-join_room(RoomName, Username) ->
+join_room(RoomName, Username) when is_binary(RoomName), is_binary(Username) ->
     case ets:lookup(chat_rooms, RoomName) of
-        [] ->
-            {error, "Room does not exist"};
-	[{RoomName, Room}] ->
-        #chat_room{room_name = RoomName, users = Users} = Room,
+        [] -> {error, "Room does not exist"};
+        [{RoomName, Room}] ->
+            #chat_room{users = Users} = Room,
             case lists:member(Username, Users) of
-                true ->
-                    {error, "User already in room"};
-                false ->
+                true -> {error, "User already in room"}; % Пользователь уже в комнате
+                false -> % Добавляем пользователя
                     UpdatedRoom = Room#chat_room{users = [Username | Users]},
-                    ets:insert(chat_rooms, UpdatedRoom),
-                    io:format("[DEBUG] User ~p added to Room ~p~n", [Username, RoomName]),
-		    {ok, "User joined the room"}
-            end;
-	 _ ->
-            {error, "Unexpected room data format"}
+                    ets:insert(chat_rooms, {RoomName, UpdatedRoom}),
+                    io:format("[DEBUG] User ~p joined Room ~p~n", [Username, RoomName]),
+                    {ok, "User joined the room"}
+            end
     end.
 
-% Отправка сообщения в комнате
-send_message(RoomName, Username, Message) ->
+send_message(RoomName, Username, NMessage) 
+    when is_binary(RoomName), is_binary(Username), is_binary(NMessage) ->
     io:format("[DEBUG] Sending message to Room: ~p by User: ~p~n", [RoomName, Username]),
     case ets:lookup(chat_rooms, RoomName) of
+        [] -> {error, "Room does not exist"};
+        [{RoomName, Room}] ->
+            #chat_room{users = Users, messages = Messages} = Room,
+            case lists:member(Username, Users) of
+                true -> % Добавляем сообщение
+                    NewMessage = {Username, NMessage},
+		    UpdatedMessages = [NewMessage | Messages],
+                    UpdatedRoom = Room#chat_room{messages = UpdatedMessages},
+                    ets:insert(chat_rooms, {RoomName, UpdatedRoom}),
+		    lists:foreach(
+                        fun(User) ->
+                            case catch send_to_user(User, RoomName, NMessage) of
+                                {ok, _} ->
+                                    ok;
+                                {error, Reason} ->
+                                    io:format("[ERROR] Failed to send a message to User: ~p, Reason: ~p~n", [User, Reason]);
+                                _ ->
+                                    io:format("[ERROR] Unexpected error while sending to User: ~p~n", [User])
+                            end
+                        end,
+                        Users
+                    ),
+                    {ok, "Message sent"};
+                false -> {error, "User not in room"} 
+            end
+    end.
+
+send_to_user(User, RoomName, NMessage) ->
+    case ets:lookup(user_sessions, User) of
         [] ->
-            {error, "Room does not exist"};
-	[{RoomName, Room}] ->
-	    #chat_room{room_name = RoomName, users = Users, messages = Messages} = Room,
-		    case lists:member(Username, Users) of
-			    true ->
-				    NewMessage = {Username, Message},
-				    UpdatedRoom = Room#chat_room{messages = [NewMessage | Messages]},
-				    ets:insert(chat_rooms, UpdatedRoom),
-				    {ok, "Message sent"};
-			    false ->
-				    {error, "User not in room"}
-		    end;
-	_ ->
-            {error, "Unexpected room data format"}
+            io:format("[ERROR] No WebSocket connection found for user ~p~n", [User]),
+            {error, "User not connected"};
+        [{User, WebSocketPID}] ->
+            try 
+                MessageToSend = #{<<"room">> => RoomName, <<"message">> => NMessage},
+                WebSocketPID ! {text, jsx:encode(MessageToSend)},
+                
+                io:format("[INFO] Message sent to User: ~p in Room: ~p, Message: ~p~n", [User, RoomName, MessageToSend]),
+                {ok, "Message sent"}
+            catch
+                _:Error ->
+                    io:format("[ERROR] Failed to send a message to User: ~p, Error: ~p~n", [User, Error]),
+                    {error, "Failed to send message"}
+            end
     end.
