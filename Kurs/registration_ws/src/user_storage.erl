@@ -1,5 +1,5 @@
 -module(user_storage).
--export([add_user/2, authenticate/2, find_user/1, init_db/0, create_room/1, join_room/2, send_message/3, init_ets/0, send_to_user/3]).
+-export([add_user/2, authenticate/2, find_user/1, init_db/0, create_room/1, join_room/2, send_message/3, init_ets/0, send_to_user/3, add_friend/2, find_user_friends/1]).
 -include_lib("epgsql/include/epgsql.hrl").
 -define(DB_HOST, "localhost").
 -define(DB_PORT, 5432).
@@ -11,7 +11,7 @@
 
 init_ets() ->
     ets:new(chat_rooms, [named_table, set, public]),
-    ets:new(user_sessions, [named_table, {keypos, 1}, {read_concurrency, true}, public]),
+    ets:new(user_sessions, [named_table, {keypos, 1}, {read_concurrency, true}, set, public]),
     ok.
 
 init_db() ->
@@ -22,7 +22,8 @@ init_db() ->
                                     port => ?DB_PORT}),
     CreateTableQuery = "CREATE TABLE IF NOT EXISTS users (
                            username VARCHAR(255) PRIMARY KEY,
-                           password VARCHAR(255) NOT NULL
+                           password VARCHAR(255) NOT NULL,
+    			   friends VARCHAR(255) 
                         );",
     epgsql:squery(Conn, CreateTableQuery),
     epgsql:close(Conn),
@@ -72,6 +73,28 @@ find_user(Username) ->
         {ok, _, [{Username}]} -> 
             epgsql:close(Conn),
             {ok, Username};
+        {ok, _, _} -> 
+            epgsql:close(Conn),
+            not_found;
+        {error, Reason} -> 
+            epgsql:close(Conn),
+            {error, Reason}
+    end.
+
+find_user_friends(Username) ->
+    {ok, Conn} = epgsql:connect(#{
+        host     => ?DB_HOST,
+        database => ?DB_NAME,
+        username => ?DB_USER,
+        password => ?DB_PASSWORD,
+        port     => ?DB_PORT
+    }),
+
+    Query = "SELECT friends FROM users WHERE username = $1;",
+    case epgsql:equery(Conn, Query, [Username]) of
+        {ok, _, [{Friends}]} -> 
+            epgsql:close(Conn),
+            {ok, Friends};
         {ok, _, _} -> 
             epgsql:close(Conn),
             not_found;
@@ -157,4 +180,26 @@ send_to_user(User, RoomName, NMessage) ->
                     io:format("[ERROR] Failed to send a message to User: ~p, Error: ~p~n", [User, Error]),
                     {error, "Failed to send message"}
             end
+    end.
+
+
+add_friend(User, Friend) ->
+    {ok, Conn} = epgsql:connect(#{
+        host => ?DB_HOST,
+        database => ?DB_NAME,
+        username => ?DB_USER,
+        password => ?DB_PASSWORD,
+        port => ?DB_PORT
+    }),
+    io:format("Username: ~p~n", [User]),
+     Query = "UPDATE users SET friends = CONCAT(COALESCE(friends, ''), $1 || '\n') WHERE username = $2",
+    case epgsql:equery(Conn, Query, [Friend, User]) of
+        {ok, _Result} ->
+            io:format("Friend ~p added for User ~p~n", [Friend, User]),
+            epgsql:close(Conn),
+            ok;
+        {error, Reason} ->
+            io:format("Failed to add Friend ~p for User ~p. Reason: ~p~n", [Friend, User, Reason]),
+            epgsql:close(Conn),
+            {error, Reason}
     end.

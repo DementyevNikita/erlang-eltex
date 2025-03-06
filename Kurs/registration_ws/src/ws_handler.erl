@@ -1,7 +1,7 @@
 -module(ws_handler).
 -behaviour(cowboy_websocket).
 
--export([init/2, websocket_init/3, websocket_handle/2, websocket_info/2, terminate/3, send_message_to_client/1]).
+-export([init/2, websocket_init/3, websocket_handle/2, websocket_info/2, terminate/3, send_message_to_client/1, get_friends_online/1]).
 
 init(Req0, State) ->
     Qs = cowboy_req:parse_qs(Req0),
@@ -65,6 +65,39 @@ websocket_handle({text, Msg}, State) ->
                     io:format("Custom message from ~p: ~p~n", [Username, NMessage]),
 		    send_message_to_client(NMessage),
 		    {reply, {text, <<"Custom message received">>}, State};
+		{add_friend, FriendName} ->
+                    case user_storage:add_friend(Username, FriendName) of
+                        ok ->
+                            io:format("User ~p added friend ~p~n", [Username, FriendName]),
+                            {reply, {text, <<"Friend added successfully">>}, State};
+                        {error, Reason} ->
+                            io:format("Failed to add friend for ~p: ~p~n", [Username, Reason]),
+                            {reply, {text, <<"Error adding friend">>}, State}
+                    end;
+		{find_user, User} ->
+                    case user_storage:find_user(User) of
+			{ok, _}  ->
+                            io:format("Find user ~p~n", [User]),
+                            {reply, {text, <<"User ", User/binary>>}, State};
+                        {error, Reason} ->
+                            io:format("Failed to add friend for ~p: ~p~n", [Username, Reason]),
+                            {reply, {text, <<"Error find user">>}, State}
+                    end;
+		{find_user_friends, User} ->
+                    case user_storage:find_user_friends(User) of
+			{ok, Friends}  ->
+			    {ok,Online} = get_friends_online(User),
+			    OnlineBin = list_to_binary(Online),
+                            io:format("Find ~p friends", [User]),
+                            {reply, {text, <<"Friends: ", Friends/binary, " Online: ", OnlineBin/binary>>}, State};
+                        {error, Reason} ->
+                            io:format("Failed to add friend for ~p: ~p~n", [Username, Reason]),
+                            {reply, {text, <<"Error find friend">>}, State}
+                    end;
+                {user_message, User, NMessage} ->
+                    io:format("Custom message from ~p to ~p: ~p~n", [Username,User, NMessage]),
+                    send_message_user(Username, User, NMessage),
+                    {reply, {text, <<"message received">>}, State};
                 invalid ->
                     {reply, {text, <<"Invalid command or ping">>}, State}
             end;
@@ -81,6 +114,13 @@ websocket_handle({binary, _Msg}, State) ->
 websocket_handle(_Data, State) ->
     io:format("Неверный формат сообщения: ~p~n", [_Data]),
     {reply, {text, <<"Ошибка: Неверный формат сообщения">>}, State}.
+
+websocket_info({custom_message, NMessage}, State) ->
+       {reply, {text, NMessage}, State};
+
+websocket_info({user_message, #{from := Sender, body := NMessage}}, State) ->
+    MessageWithSender = <<"From ", Sender/binary, ": ", NMessage/binary>>,
+    {reply, {text, MessageWithSender}, State};
 
 websocket_info(_Info,State) ->
     {ok, State}.
@@ -116,6 +156,10 @@ parse_message(Message) ->
         [<<"join_room">>, RoomName] -> {join_room, RoomName};
         [<<"send_message">>, RoomName, NMessage] -> {send_message, RoomName, NMessage};
 	[<<"custom_message">>, NMessage] -> {custom_message, NMessage};
+	[<<"add_friend">>, FriendName] -> {add_friend, FriendName};
+	[<<"find_user">>, User] -> {find_user, User};
+	[<<"find_user_friends">>, User] -> {find_user_friends, User};
+	[<<"user_message">>, User, NMessage] -> {user_message, User, NMessage};
 	_ -> invalid
     end.
 
@@ -124,3 +168,37 @@ send_message_to_client(NMessage) ->
     lists:foreach(fun({_, ClientPid}) ->
                       ClientPid ! {custom_message, NMessage}
                   end, Clients).
+
+send_message_user(Sender,User, NMessage) ->
+    case ets:lookup(user_sessions, User) of
+        [] ->
+            io:format("[ERROR] No WebSocket connection found for user ~p~n", [User]),
+            {error, "user not connected"};
+        [{User, ClientPid}] ->
+            try
+                ClientPid ! {user_message, #{from => Sender, body => NMessage}},
+                io:format("[INFO] Message sent ~p to User: ~p, Message: ~p~n", [Sender, User, NMessage]),
+                {ok, "Message sent"}
+            catch
+                Error ->
+                    io:format("[ERROR] Failed to send a message ~p to User: ~p, Error: ~p~n", [Sender, User, Error]),
+                    {error, "Failed to send message"}
+            end
+    end.
+
+
+get_friends_online(Username) ->
+    case user_storage:find_user_friends(Username) of
+        {ok, Friends} ->
+            FriendsList = string:tokens(binary_to_list(Friends), "\n"),
+            OnlineUsers = get_online_users(),
+	    OnlineUsersStrings = [binary_to_list(User) || User <- OnlineUsers],
+            FriendsOnline = [Friend || Friend <- FriendsList, lists:member(Friend, OnlineUsersStrings)],
+            {ok, FriendsOnline};
+        {error, Reason} ->
+            {error, Reason}
+    end.
+
+get_online_users() ->
+    [Username || {Username, _Pid} <- ets:tab2list(user_sessions)].
+
