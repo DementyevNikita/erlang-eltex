@@ -12,6 +12,7 @@
 init_ets() ->
     ets:new(chat_rooms, [named_table, set, public]),
     ets:new(user_sessions, [named_table, {keypos, 1}, {read_concurrency, true}, set, public]),
+    ets:new(pending_messages, [named_table,{keypos, 1}, public]),
     ok.
 
 init_db() ->
@@ -169,37 +170,36 @@ send_to_user(User, RoomName, NMessage) ->
             io:format("[ERROR] No WebSocket connection found for user ~p~n", [User]),
             {error, "User not connected"};
         [{User, WebSocketPID}] ->
-            try 
-                MessageToSend = #{<<"room">> => RoomName, <<"message">> => NMessage},
-                WebSocketPID ! {text, jsx:encode(MessageToSend)},
-                
-                io:format("[INFO] Message sent to User: ~p in Room: ~p, Message: ~p~n", [User, RoomName, MessageToSend]),
+            try
+                WebSocketPID ! {send_message, #{room => RoomName, user => User, body => NMessage}},
+                io:format("[INFO] Message sent to User: ~p in Room: ~p. Message: ~p~n", [User, RoomName, NMessage]),
                 {ok, "Message sent"}
             catch
-                _:Error ->
-                    io:format("[ERROR] Failed to send a message to User: ~p, Error: ~p~n", [User, Error]),
+                _Error ->
+                    io:format("[ERROR] Failed to send a message to User: ~p in Room: ~p. Error: ~p~n", [User, RoomName, _Error]),
                     {error, "Failed to send message"}
             end
     end.
 
 
+
 add_friend(User, Friend) ->
-    {ok, Conn} = epgsql:connect(#{
-        host => ?DB_HOST,
-        database => ?DB_NAME,
-        username => ?DB_USER,
-        password => ?DB_PASSWORD,
-        port => ?DB_PORT
-    }),
-    io:format("Username: ~p~n", [User]),
-     Query = "UPDATE users SET friends = CONCAT(COALESCE(friends, ''), $1 || '\n') WHERE username = $2",
-    case epgsql:equery(Conn, Query, [Friend, User]) of
-        {ok, _Result} ->
-            io:format("Friend ~p added for User ~p~n", [Friend, User]),
-            epgsql:close(Conn),
-            ok;
-        {error, Reason} ->
-            io:format("Failed to add Friend ~p for User ~p. Reason: ~p~n", [Friend, User, Reason]),
-            epgsql:close(Conn),
-            {error, Reason}
+    case User == Friend of
+        true ->
+            io:format("Failed to add friend: User ~p cannot add themselves as a friend~n", [User]),
+            {error, "User cannot add themselves as a friend"};
+        false ->
+		    {ok, Conn} = epgsql:connect(#{host => ?DB_HOST,database => ?DB_NAME,username => ?DB_USER,password => ?DB_PASSWORD,port => ?DB_PORT}),
+		    io:format("Username: ~p~n", [User]),
+		    Query = "UPDATE users SET friends = CONCAT(COALESCE(friends, ''), $1 || '\n') WHERE username = $2",
+		    case epgsql:equery(Conn, Query, [Friend, User]) of
+			    {ok, _Result} ->
+				    io:format("Friend ~p added for User ~p~n", [Friend, User]),
+				    epgsql:close(Conn),
+				    ok;
+			    {error, Reason} ->
+				    io:format("Failed to add Friend ~p for User ~p. Reason: ~p~n", [Friend, User, Reason]),
+				    epgsql:close(Conn),
+				    {error, Reason}
+		    end
     end.

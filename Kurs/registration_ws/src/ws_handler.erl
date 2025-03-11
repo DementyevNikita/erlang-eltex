@@ -95,9 +95,24 @@ websocket_handle({text, Msg}, State) ->
                             {reply, {text, <<"Error find friend">>}, State}
                     end;
                 {user_message, User, NMessage} ->
-                    io:format("Custom message from ~p to ~p: ~p~n", [Username,User, NMessage]),
-                    send_message_user(Username, User, NMessage),
-                    {reply, {text, <<"message received">>}, State};
+		    case ets:lookup(user_sessions, User) of
+			[] ->
+			    save_message_to_table(User, NMessage),
+			    io:format("[INFO] User '~p' not connected. Message saved.~n", [User]),
+			    {reply, {text, <<"message saved">>}, State};
+			[{User, _ClientPid}] ->
+                    	    io:format("Custom message from ~p to ~p: ~p~n", [Username,User, NMessage]),
+                    	    send_message_user(Username, User, NMessage),
+                    	    {reply, {text, <<"message received">>}, State}
+		    end;
+		{offline_message} ->
+	 	    io:format("Messages for ~p~n", [Username]),
+		    Messages = ets:lookup(pending_messages, Username),
+		    io:format("Messages ~p~n", [Messages]),
+		    FormattedMessages = lists:map(fun({User, Message}) ->io_lib:format("User: ~p, Message: ~p~n", [User, Message])end, Messages),
+		    MesBin = list_to_binary([lists:flatten(FormattedMessages)]),
+		    ets:delete(pending_messages, Username),
+		    {reply, {text,MesBin}, State};	    
                 invalid ->
                     {reply, {text, <<"Invalid command or ping">>}, State}
             end;
@@ -117,6 +132,10 @@ websocket_handle(_Data, State) ->
 
 websocket_info({custom_message, NMessage}, State) ->
        {reply, {text, NMessage}, State};
+
+websocket_info({send_message, #{room := RoomName, user := User, body := NMessage}}, State) ->
+       Mess = <<"in ", RoomName/binary, " from " , User/binary, ": ", NMessage/binary>>,
+       {reply, {text, Mess}, State};
 
 websocket_info({user_message, #{from := Sender, body := NMessage}}, State) ->
     MessageWithSender = <<"From ", Sender/binary, ": ", NMessage/binary>>,
@@ -160,6 +179,7 @@ parse_message(Message) ->
 	[<<"find_user">>, User] -> {find_user, User};
 	[<<"find_user_friends">>, User] -> {find_user_friends, User};
 	[<<"user_message">>, User, NMessage] -> {user_message, User, NMessage};
+	[<<"offline_message">>] -> {offline_message};
 	_ -> invalid
     end.
 
@@ -202,3 +222,6 @@ get_friends_online(Username) ->
 get_online_users() ->
     [Username || {Username, _Pid} <- ets:tab2list(user_sessions)].
 
+save_message_to_table(User, Message) ->
+    ets:insert(pending_messages, {User, Message}),
+    io:format("[INFO] Message for user '~p' saved to table.~n", [User]).
