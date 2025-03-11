@@ -1,6 +1,6 @@
 -module(ws_client).
 
--export([connect/3, send_message/3, create_room/3, join_room/3, send_to_room/4,startpingloop/2, start_listening_loop/2, add_friend/3, find_user/3, find_user_friends/3, send_message_user/4]).
+-export([connect/3, send_message/3, create_room/3, join_room/3, send_to_room/4,startpingloop/2, start_listening_loop/2, add_friend/3, find_user/3, find_user_friends/3, send_message_user/4, offline_message/2]).
 
 connect(Host, Port, Token) ->
     {ok, ConnPid} = gun:open(Host, Port),
@@ -70,6 +70,12 @@ find_user_friends(ConnPid, WSRef, User) ->
     io:format("Запрос на список друзей: ~p~n", [User]),
     wait_for_reply().
 
+offline_message(ConnPid, WSRef) ->
+    Msg = <<"offline_message">>,
+    gun:ws_send(ConnPid, WSRef, {text, Msg}),
+    io:format("Запрос сообщений: "),
+    wait_for_reply().
+
 startpingloop(ConnPid, WSRef) ->
     sendping(ConnPid, WSRef),
     timer:sleep(10000),
@@ -95,11 +101,15 @@ wait_for_reply() ->
     end.
 
 start_listening_loop(ConnPid, WSRef) ->
+    io:format("Сообщение процесса:~p ~p~n", [ConnPid, WSRef]),
     receive
-        {gun_ws, _ConnPid, _WSRef, {text, Message}} ->
+        {gun_ws, ConnPid, WSRef, {text, Message}} ->
             io:format("Получено сообщение: ~s~n", [Message]),
             start_listening_loop(ConnPid, WSRef);
+	{gun_ws, ConnPid, WSRef, {binary, _Message}} ->
+	    start_listening_loop(ConnPid, WSRef);
         Message ->
             io:format("Необработанное сообщение: ~p~n", [Message]),
             start_listening_loop(ConnPid, WSRef)
     end.
+

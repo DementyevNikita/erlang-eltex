@@ -5,7 +5,7 @@
 -export([start/2, stop/1]).
 
 start(_StartType, _StartArgs) ->
-	io:format("Starting registration_ws application...~n"),
+	io:format("Starting ws_client application...~n"),
 	application:ensure_all_started(cowlib),
 	application:ensure_all_started(gun),
 	application:ensure_all_started(jsx),
